@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+venv/
+.venv/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+._.DS_Store
+
+# Local configuration and secrets
+/.env
+/.env.*
+!/.env.example
+.claude/
+
+# Database / migrations generated locally
+db.sqlite3
+db.sqlite3-*
+*.sqlite3
+*.sqlite3-*
+migrations/
+
+# Logs
+*.log
+logs/
+
+# Frontend
+web/node_modules/
+web/dist/
+web/.vite/
+web/.env.local
+
+# Build / cache
+dist/
+build/
+.cache/
