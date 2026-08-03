@@ -37,6 +37,8 @@ export default {
   createDept: (data = {}) => request.post('/dept/create', data),
   updateDept: (data = {}) => request.post('/dept/update', data),
   deleteDept: (params = {}) => request.delete('/dept/delete', { params }),
+  // dashboard
+  getDashboardSummary: () => request.get('/dashboard/summary'),
   // auditlog
   getAuditLogList: (params = {}) => request.get('/auditlog/list', { params }),
   cleanupAuditLogs: (params = {}) => request.delete('/auditlog/cleanup', { params }),
