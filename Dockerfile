@@ -1,8 +1,8 @@
-FROM node:18.12.0-alpine3.16 AS web
+FROM node:20-alpine AS web
 
 WORKDIR /opt/drivemind-ai
 COPY /web ./web
-RUN cd /opt/drivemind-ai/web && npm i --registry=https://registry.npmmirror.com && npm run build
+RUN cd /opt/drivemind-ai/web && npm ci --registry=https://registry.npmmirror.com && npm run build
 
 
 FROM python:3.11-slim-bullseye

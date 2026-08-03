@@ -1,0 +1,52 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: drivemind-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: drivemind_root_password
+      MYSQL_DATABASE: drivemind
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --default-time-zone=+08:00
+    ports:
+      - "3307:3306"
+    volumes:
+      - drivemind_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pdrivemind_root_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  drivemind-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: drivemind-ai
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: drivemind_root_password
+      DB_NAME: drivemind
+      DEEPSEEK_API_KEY: ""
+      DEEPSEEK_BASE_URL: https://api.deepseek.com
+      DEEPSEEK_MODEL: deepseek-chat
+      DEEPSEEK_MAX_TOKENS: 2048
+      DEEPSEEK_TIMEOUT: 30
+      AUDIT_LOG_RETENTION_DAYS: 30
+      AI_CONTEXT_RETENTION_DAYS: 30
+      AI_CONTEXT_MAX_MESSAGES_PER_SESSION: 20
+      AI_CONTEXT_RECENT_MESSAGES: 6
+    ports:
+      - "8080:80"
+
+volumes:
+  drivemind_mysql_data:
