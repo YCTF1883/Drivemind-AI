@@ -340,6 +340,87 @@ npm run dev
 
 ---
 
+## Docker Compose 一键启动
+
+如果只想快速体验项目，可以使用 Docker Compose 同时启动前端、后端和 MySQL。
+
+### 1. 启动服务
+
+```bash
+docker compose up -d --build
+```
+
+启动成功后访问：
+
+```text
+http://localhost:8080
+```
+
+默认账号：
+
+```text
+username: admin
+password: 123456
+```
+
+### 2. 服务说明
+
+| 服务 | 说明 | 端口 |
+|---|---|---|
+| `drivemind-ai` | 前端静态页面 + Nginx + FastAPI 后端 | `8080:80` |
+| `drivemind-mysql` | MySQL 8.0 数据库 | `3307:3306` |
+
+Docker 版项目内部使用 Compose 网络连接 MySQL：
+
+```text
+DB_HOST=mysql
+DB_PORT=3306
+```
+
+如果需要使用 Navicat 连接 Docker MySQL，可使用：
+
+```text
+Host: 127.0.0.1
+Port: 3307
+User: root
+Password: drivemind_root_password
+Database: drivemind
+```
+
+### 3. 数据持久化
+
+Docker Compose 会通过 volume 保存 MySQL 数据：
+
+```text
+drivemind_mysql_data:/var/lib/mysql
+```
+
+普通停止服务不会删除数据：
+
+```bash
+docker compose down
+```
+
+如果需要重新初始化数据库，可以删除容器和 volume：
+
+```bash
+docker compose down -v
+```
+
+注意：`docker compose down -v` 会删除 Docker MySQL 中的所有数据，请谨慎使用。
+
+### 4. AI 配置说明
+
+`docker-compose.yml` 中默认没有填写真实 DeepSeek API Key：
+
+```yaml
+DEEPSEEK_API_KEY: ""
+```
+
+不配置 API Key 时，系统仍可运行，AI 功能会使用本地 fallback 或返回降级结果。若需要体验真实大模型能力，请只在本地环境中配置自己的 API Key，不要提交到 GitHub。
+
+---
+
 ## 默认账号
 
 开发初始化会创建默认超级管理员：
