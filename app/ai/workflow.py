@@ -5,9 +5,10 @@ import httpx
 from tortoise.expressions import Q
 
 from app.ai.exceptions import AIServiceError
+from app.controllers.progress import task_status_progress
 from app.models.admin import User
 from app.models.business import Project, Task, WorkReport
-from app.models.enums import RiskLevel, TaskPriority, TaskStatus
+from app.models.enums import RiskLevel, TaskPriority, TaskStatus, TaskWorkload
 from app.schemas.ai import ManagerAnswerResult, TaskBreakdownItem, TaskBreakdownRequest, TaskBreakdownResult
 from app.schemas.reports import ReportAnalysisResult
 from app.settings.config import settings
@@ -89,7 +90,8 @@ class DriveMindAIWorkflow:
     async def _breakdown_with_deepseek(self, req: TaskBreakdownRequest) -> TaskBreakdownResult:
         prompt = (
             "请把研发项目目标拆解成 4 到 8 个可执行任务。"
-            "任务要适合企业研发运营管理平台演示，标题简短，描述清晰，优先级和风险要合理。\n\n"
+            "任务要适合企业研发运营管理平台演示，标题简短，描述清晰，优先级、工作量和风险要合理。"
+            "工作量只允许 simple、normal、complex，分别代表简单、普通、复杂。\n\n"
             f"项目输入：{json.dumps(req.model_dump(mode='json'), ensure_ascii=False)}\n\n"
             f"输出 JSON Schema：{json.dumps(TaskBreakdownResult.model_json_schema(), ensure_ascii=False)}"
         )
@@ -102,8 +104,10 @@ class DriveMindAIWorkflow:
     async def _analyze_with_deepseek(self, task: Task, content: str) -> ReportAnalysisResult:
         task_data = await task.to_dict()
         prompt = (
-            "请分析员工自然语言工作汇报，提取完成事项、问题、风险、所需支持、建议动作，"
-            "并给出合理的 progress_delta 和 progress_after。progress_after 不能低于当前任务进度。\n\n"
+            "请分析员工自然语言工作汇报，提取完成事项、问题、风险、所需支持、建议动作。"
+            "任务进度由系统根据任务状态自动估算，不要机械生成固定百分比；"
+            "progress_after 只填写当前任务状态对应的系统估算值，progress_delta 只填写与当前任务进度的非负差值。"
+            "状态估算规则：not_started=0，blocked=30，in_progress=50，in_review=80，completed=100。\n\n"
             f"任务信息：{json.dumps(task_data, ensure_ascii=False)}\n"
             f"汇报原文：{content}\n\n"
             f"输出 JSON Schema：{json.dumps(ReportAnalysisResult.model_json_schema(), ensure_ascii=False)}"
@@ -113,9 +117,9 @@ class DriveMindAIWorkflow:
             prompt=prompt,
         )
         result = ReportAnalysisResult.model_validate(data)
-        if result.progress_after < task.progress:
-            result.progress_after = task.progress
-            result.progress_delta = 0
+        next_progress = task_status_progress(TaskStatus.BLOCKED if result.problems or result.support_needed or result.risk_level != RiskLevel.LOW else TaskStatus.IN_PROGRESS)
+        result.progress_after = next_progress
+        result.progress_delta = max(0, next_progress - task.progress)
         return result
 
     async def _answer_with_deepseek(
@@ -190,6 +194,7 @@ class DriveMindAIWorkflow:
                     desc=f"围绕“{req.goal}”完成{title}。",
                     assignee_id=assignee_id,
                     priority=TaskPriority.HIGH if index in [0, 2] else TaskPriority.MEDIUM,
+                    workload=TaskWorkload.COMPLEX if index in [1, 2, 3] else TaskWorkload.NORMAL,
                     due_date=req.end_date,
                     risk_level=RiskLevel.MEDIUM if index == 4 else RiskLevel.LOW,
                 )
@@ -205,15 +210,15 @@ class DriveMindAIWorkflow:
             risk_level = RiskLevel.MEDIUM
         if any(keyword in content for keyword in ["需要", "协助", "支持", "排查"]):
             support_needed.append("需要相关同事协助排查")
-        progress_delta = 10 if risk_level == RiskLevel.LOW else 5
-        progress_after = min(100, max(task.progress, task.progress + progress_delta))
+        next_status = TaskStatus.BLOCKED if problems or support_needed or risk_level != RiskLevel.LOW else TaskStatus.IN_PROGRESS
+        progress_after = task_status_progress(next_status)
         return ReportAnalysisResult(
             completed_items=[content] if not problems else [],
             problems=problems,
             risk_level=risk_level,
             support_needed=support_needed,
             suggestions=["建议项目经理关注该任务进展" if risk_level != RiskLevel.LOW else "继续按计划推进"],
-            progress_delta=progress_after - task.progress,
+            progress_delta=max(0, progress_after - task.progress),
             progress_after=progress_after,
         )
 

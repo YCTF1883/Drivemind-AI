@@ -24,7 +24,7 @@ RUN pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 COPY --from=web /opt/drivemind-ai/web/dist /opt/drivemind-ai/web/dist
 ADD /deploy/web.conf /etc/nginx/sites-available/web.conf
-RUN rm -f /etc/nginx/sites-enabled/default \ 
+RUN rm -f /etc/nginx/sites-enabled/default \
     && ln -s /etc/nginx/sites-available/web.conf /etc/nginx/sites-enabled/ 
 
 ENV LANG=zh_CN.UTF-8

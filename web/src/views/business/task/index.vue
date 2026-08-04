@@ -6,7 +6,6 @@ import {
   NForm,
   NFormItem,
   NInput,
-  NInputNumber,
   NPopconfirm,
   NProgress,
   NSelect,
@@ -50,6 +49,7 @@ const initForm = {
   due_date: null,
   status: 'not_started',
   progress: 0,
+  workload: 'normal',
   risk_level: 'low',
   source: 'manual',
 }
@@ -95,11 +95,26 @@ const priorityOptions = [
   { label: '紧急', value: 'urgent' },
 ]
 
+const workloadOptions = [
+  { label: '简单', value: 'simple' },
+  { label: '普通', value: 'normal' },
+  { label: '复杂', value: 'complex' },
+]
+
 const riskOptions = [
   { label: '低', value: 'low' },
   { label: '中', value: 'medium' },
   { label: '高', value: 'high' },
 ]
+
+const statusProgressMap = {
+  not_started: 0,
+  blocked: 30,
+  in_progress: 50,
+  in_review: 80,
+  completed: 100,
+  archived: 0,
+}
 
 const statusMap = {
   not_started: { text: '未开始', type: 'default' },
@@ -115,6 +130,12 @@ const priorityMap = {
   medium: { text: '中', type: 'info' },
   high: { text: '高', type: 'warning' },
   urgent: { text: '紧急', type: 'error' },
+}
+
+const workloadMap = {
+  simple: { text: '简单', type: 'success' },
+  normal: { text: '普通', type: 'info' },
+  complex: { text: '复杂', type: 'warning' },
 }
 
 const riskMap = {
@@ -133,9 +154,6 @@ const rules = {
 const reportRules = {
   task_status: [{ required: true, message: '请选择本次状态', trigger: ['blur', 'change'] }],
   raw_content: [{ required: true, message: '请输入进展留言', trigger: ['input', 'blur'] }],
-  progress_after: [
-    { required: true, type: 'number', message: '请输入当前进度', trigger: ['blur'] },
-  ],
 }
 
 const canListProjects = computed(() => hasApi('get/api/v1/project/list'))
@@ -200,11 +218,6 @@ function handleOpenReport(row) {
 }
 
 function handleReportStatusChange(value) {
-  if (value === 'in_review') {
-    reportForm.value.progress_after = 100
-  } else if (currentTask.value && reportForm.value.progress_after < currentTask.value.progress) {
-    reportForm.value.progress_after = currentTask.value.progress || 0
-  }
   if (value === 'blocked' && reportForm.value.risk_level === 'low') {
     reportForm.value.risk_level = 'medium'
   }
@@ -220,10 +233,6 @@ function splitLines(value) {
 async function handleSaveReport() {
   reportFormRef.value?.validate(async (err) => {
     if (err) return
-    if (currentTask.value && reportForm.value.progress_after < currentTask.value.progress) {
-      $message.error('当前进度不能低于原任务进度')
-      return
-    }
     if (reportForm.value.task_status === 'blocked' && !reportForm.value.problems_text.trim()) {
       $message.error('遇到阻塞时请填写具体问题')
       return
@@ -234,12 +243,8 @@ async function handleSaveReport() {
       await api.confirmReport({
         task_id: reportForm.value.task_id,
         task_status: reportForm.value.task_status,
-        progress_after:
-          reportForm.value.task_status === 'in_review' ? 100 : reportForm.value.progress_after,
-        progress_delta: Math.max(
-          0,
-          reportForm.value.progress_after - (currentTask.value?.progress || 0)
-        ),
+        progress_after: currentTask.value?.progress || 0,
+        progress_delta: 0,
         risk_level: reportForm.value.risk_level,
         raw_content: reportForm.value.raw_content,
         completed_items: splitLines(reportForm.value.completed_items_text),
@@ -264,7 +269,6 @@ async function handleConfirmComplete(row) {
   await api.updateTask({
     ...row,
     status: 'completed',
-    progress: 100,
   })
   $message.success('已确认任务完成')
   $table.value?.handleSearch()
@@ -280,6 +284,10 @@ function canReportProgress(row) {
 
 function canConfirmComplete(row) {
   return canUpdateTask.value && row.status === 'in_review'
+}
+
+function getEstimatedProgress(status) {
+  return statusProgressMap[status] ?? 0
 }
 
 function renderTag(map, value) {
@@ -383,6 +391,15 @@ const columns = [
     },
   },
   {
+    title: '工作量',
+    key: 'workload',
+    width: 80,
+    align: 'center',
+    render(row) {
+      return renderTag(workloadMap, row.workload || 'normal')
+    },
+  },
+  {
     title: '风险',
     key: 'risk_level',
     width: 80,
@@ -392,7 +409,7 @@ const columns = [
     },
   },
   {
-    title: '进度',
+    title: '估算进度',
     key: 'progress',
     width: 150,
     render(row) {
@@ -631,6 +648,9 @@ const columns = [
         <NFormItem label="优先级" path="priority">
           <NSelect v-model:value="modalForm.priority" :options="priorityOptions" />
         </NFormItem>
+        <NFormItem label="工作量" path="workload">
+          <NSelect v-model:value="modalForm.workload" :options="workloadOptions" />
+        </NFormItem>
         <NFormItem label="风险等级" path="risk_level">
           <NSelect v-model:value="modalForm.risk_level" :options="riskOptions" />
         </NFormItem>
@@ -643,12 +663,11 @@ const columns = [
             style="width: 100%"
           />
         </NFormItem>
-        <NFormItem label="进度" path="progress">
-          <NInputNumber
-            v-model:value="modalForm.progress"
-            :min="0"
-            :max="100"
-            style="width: 100%"
+        <NFormItem label="估算进度">
+          <NProgress
+            type="line"
+            :percentage="getEstimatedProgress(modalForm.status)"
+            indicator-placement="inside"
           />
         </NFormItem>
       </NForm>
@@ -674,15 +693,6 @@ const columns = [
             v-model:value="reportForm.task_status"
             :options="reportStatusOptions"
             @update:value="handleReportStatusChange"
-          />
-        </NFormItem>
-        <NFormItem label="当前进度" path="progress_after">
-          <NInputNumber
-            v-model:value="reportForm.progress_after"
-            :min="currentTask?.progress || 0"
-            :max="100"
-            :disabled="reportForm.task_status === 'in_review'"
-            style="width: 100%"
           />
         </NFormItem>
         <NFormItem label="风险等级" path="risk_level">

@@ -152,7 +152,7 @@
                 <n-tag :type="getRisk(report.risk_level).type" size="small">
                   {{ getRisk(report.risk_level).text }}
                 </n-tag>
-                <span>进度 {{ report.progress_after || 0 }}%</span>
+                <span>估算 {{ report.progress_after || 0 }}%</span>
               </div>
             </div>
           </div>

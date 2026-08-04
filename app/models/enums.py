@@ -42,6 +42,12 @@ class TaskPriority(StrEnum):
     URGENT = "urgent"
 
 
+class TaskWorkload(StrEnum):
+    SIMPLE = "simple"
+    NORMAL = "normal"
+    COMPLEX = "complex"
+
+
 class RiskLevel(StrEnum):
     LOW = "low"
     MEDIUM = "medium"

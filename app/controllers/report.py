@@ -3,6 +3,7 @@ from tortoise.expressions import Q
 from tortoise.transactions import atomic
 
 from app.controllers.business_access import is_business_manager
+from app.controllers.progress import task_status_progress
 from app.core.crud import CRUDBase
 from app.models.admin import User
 from app.models.business import Project, Task, WorkReport
@@ -87,24 +88,23 @@ class ReportController(CRUDBase[WorkReport, ReportCreate, ReportCreate]):
         task = await task_controller.get_visible(obj_in.task_id, reporter)
         if not reporter.is_superuser and task.assignee_id != reporter.id:
             raise HTTPException(status_code=403, detail="Only task assignee can submit report")
-        if obj_in.progress_after < task.progress:
-            raise HTTPException(status_code=400, detail="Report progress cannot be lower than current task progress")
-
-        data = obj_in.model_dump(exclude={"task_status"})
-        data["reporter_id"] = reporter.id
-        report = await self.create(data)
 
         next_status = obj_in.task_status
         if next_status is None:
-            if obj_in.progress_after >= 100:
-                next_status = TaskStatus.IN_REVIEW
-            elif obj_in.problems or obj_in.support_needed or obj_in.risk_level.value in ["medium", "high"]:
+            if obj_in.problems or obj_in.support_needed or obj_in.risk_level.value in ["medium", "high"]:
                 next_status = TaskStatus.BLOCKED
             else:
                 next_status = TaskStatus.IN_PROGRESS
+        next_progress = task_status_progress(next_status)
+
+        data = obj_in.model_dump(exclude={"task_status"})
+        data["reporter_id"] = reporter.id
+        data["progress_after"] = next_progress
+        data["progress_delta"] = max(0, next_progress - task.progress)
+        report = await self.create(data)
 
         update_fields = {
-            "progress": 100 if next_status == TaskStatus.IN_REVIEW else obj_in.progress_after,
+            "progress": next_progress,
             "risk_level": obj_in.risk_level,
             "status": next_status,
         }

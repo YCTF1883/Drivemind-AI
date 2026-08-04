@@ -3,6 +3,7 @@ from tortoise.expressions import Q
 from tortoise.transactions import atomic
 
 from app.controllers.business_access import is_business_manager
+from app.controllers.progress import task_status_progress
 from app.core.crud import CRUDBase
 from app.models.admin import User
 from app.models.business import Project, Task, WorkReport
@@ -81,6 +82,7 @@ class TaskController(CRUDBase[Task, TaskCreate, TaskUpdate]):
         await self._ensure_project_editable(obj_in.project_id, creator_id)
         data = obj_in.model_dump()
         data["creator_id"] = creator_id
+        data["progress"] = task_status_progress(obj_in.status)
         task = await self.create(data)
         await self._recalculate_project(task.project_id)
         return task
@@ -93,6 +95,7 @@ class TaskController(CRUDBase[Task, TaskCreate, TaskUpdate]):
             data = item.model_dump()
             data["creator_id"] = creator_id
             data["source"] = TaskSource.AI
+            data["progress"] = task_status_progress(item.status)
             task = await self.create(data)
             tasks.append(task)
         project_ids = set(task.project_id for task in tasks)
@@ -104,7 +107,9 @@ class TaskController(CRUDBase[Task, TaskCreate, TaskUpdate]):
         task = await self.get_visible(obj_in.id, current_user)
         if not await self._can_edit_task(task, current_user):
             raise HTTPException(status_code=403, detail="No permission to update this task")
-        updated = await self.update(id=obj_in.id, obj_in=obj_in)
+        data = obj_in.model_dump(exclude={"id"})
+        data["progress"] = task_status_progress(obj_in.status)
+        updated = await self.update(id=obj_in.id, obj_in=data)
         await self._recalculate_project(updated.project_id)
         return updated
 
@@ -112,12 +117,10 @@ class TaskController(CRUDBase[Task, TaskCreate, TaskUpdate]):
         task = await self.get_visible(obj_in.id, current_user)
         if not current_user.is_superuser and task.assignee_id != current_user.id:
             raise HTTPException(status_code=403, detail="Only assignee can update progress")
-        if obj_in.progress < task.progress:
-            raise HTTPException(status_code=400, detail="Progress cannot go backwards")
         if obj_in.status == TaskStatus.COMPLETED:
             raise HTTPException(status_code=400, detail="Assignee can only submit task for review, manager confirms completion")
-        task.status = TaskStatus.IN_REVIEW if obj_in.progress >= 100 else obj_in.status
-        task.progress = obj_in.progress
+        task.status = obj_in.status
+        task.progress = task_status_progress(obj_in.status)
         task.risk_level = obj_in.risk_level
         await task.save()
         await self._recalculate_project(task.project_id)

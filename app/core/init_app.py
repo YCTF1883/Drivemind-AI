@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware import Middleware
 from fastapi.middleware.cors import CORSMiddleware
-from tortoise import Tortoise
+from tortoise import Tortoise, connections
 from tortoise.expressions import Q
 
 from app.api import api_router
@@ -231,6 +231,15 @@ async def init_apis():
 async def init_db():
     await Tortoise.init(config=settings.TORTOISE_ORM)
     await Tortoise.generate_schemas(safe=True)
+    await patch_business_schema()
+
+
+async def patch_business_schema():
+    connection = connections.get("mysql")
+    columns = await connection.execute_query_dict("SHOW COLUMNS FROM `task` LIKE 'workload'")
+    if not columns:
+        await connection.execute_script("ALTER TABLE `task` ADD COLUMN `workload` VARCHAR(20) NOT NULL DEFAULT 'normal'")
+        logger.info("Business schema patched: added task.workload")
 
 
 async def _add_missing_menus(role: Role, menus: list[Menu]):

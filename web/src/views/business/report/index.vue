@@ -143,16 +143,12 @@ const columns = [
     },
   },
   {
-    title: '进度',
+    title: '估算进度',
     key: 'progress_after',
     width: 180,
     render(row) {
       return h('div', { class: 'report-progress' }, [
-        h(
-          'div',
-          { class: 'report-cell__secondary' },
-          `本次 +${row.progress_delta || 0}%，当前 ${row.progress_after || 0}%`
-        ),
+        h('div', { class: 'report-cell__secondary' }, `系统估算 ${row.progress_after || 0}%`),
         h(NProgress, {
           type: 'line',
           percentage: row.progress_after || 0,
@@ -277,8 +273,8 @@ const columns = [
             {{ riskMap[currentReport.risk_level]?.text || '-' }}
           </NTag>
         </NDescriptionsItem>
-        <NDescriptionsItem label="进度">
-          +{{ currentReport.progress_delta || 0 }}%，汇报后 {{ currentReport.progress_after || 0 }}%
+        <NDescriptionsItem label="估算进度">
+          汇报后系统估算 {{ currentReport.progress_after || 0 }}%
         </NDescriptionsItem>
         <NDescriptionsItem label="提交时间">{{
           currentReport.created_at || '-'

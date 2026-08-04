@@ -1,7 +1,7 @@
 from tortoise import fields
 
 from .base import BaseModel, TimestampMixin
-from .enums import ProjectStatus, ReportStatus, RiskLevel, TaskPriority, TaskSource, TaskStatus
+from .enums import ProjectStatus, ReportStatus, RiskLevel, TaskPriority, TaskSource, TaskStatus, TaskWorkload
 
 
 class Project(BaseModel, TimestampMixin):
@@ -31,6 +31,7 @@ class Task(BaseModel, TimestampMixin):
     due_date = fields.DateField(null=True, description="截止日期", index=True)
     status = fields.CharEnumField(TaskStatus, default=TaskStatus.NOT_STARTED, description="任务状态", index=True)
     progress = fields.IntField(default=0, description="任务进度", index=True)
+    workload = fields.CharEnumField(TaskWorkload, default=TaskWorkload.NORMAL, description="任务工作量", index=True)
     risk_level = fields.CharEnumField(RiskLevel, default=RiskLevel.LOW, description="风险等级", index=True)
     source = fields.CharEnumField(TaskSource, default=TaskSource.MANUAL, description="任务来源", index=True)
     is_archived = fields.BooleanField(default=False, description="归档标记", index=True)
@@ -48,8 +49,8 @@ class WorkReport(BaseModel, TimestampMixin):
     risk_level = fields.CharEnumField(RiskLevel, default=RiskLevel.LOW, description="风险等级", index=True)
     support_needed = fields.JSONField(default=list, description="所需支持")
     suggestions = fields.JSONField(default=list, description="建议动作")
-    progress_delta = fields.IntField(default=0, description="进度变化")
-    progress_after = fields.IntField(default=0, description="汇报后进度")
+    progress_delta = fields.IntField(default=0, description="系统估算进度变化")
+    progress_after = fields.IntField(default=0, description="汇报后系统估算进度")
     status = fields.CharEnumField(ReportStatus, default=ReportStatus.CONFIRMED, description="汇报状态", index=True)
 
     class Meta:

@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import RiskLevel, TaskPriority
+from app.models.enums import RiskLevel, TaskPriority, TaskWorkload
 from app.schemas.reports import ReportAnalysisResult
 
 
@@ -20,6 +20,7 @@ class TaskBreakdownItem(BaseModel):
     desc: str = Field("", description="任务描述")
     assignee_id: Optional[int] = Field(None, description="推荐负责人ID")
     priority: TaskPriority = Field(TaskPriority.MEDIUM, description="优先级")
+    workload: TaskWorkload = Field(TaskWorkload.NORMAL, description="任务工作量")
     due_date: Optional[date] = Field(None, description="截止日期")
     risk_level: RiskLevel = Field(RiskLevel.LOW, description="风险等级")
 

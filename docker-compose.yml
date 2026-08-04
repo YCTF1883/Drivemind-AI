@@ -36,7 +36,7 @@ services:
       DB_USER: root
       DB_PASSWORD: drivemind_root_password
       DB_NAME: drivemind
-      DEEPSEEK_API_KEY: ""
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: https://api.deepseek.com
       DEEPSEEK_MODEL: deepseek-chat
       DEEPSEEK_MAX_TOKENS: 2048

@@ -2,6 +2,7 @@ from fastapi import HTTPException
 from tortoise.expressions import Q
 
 from app.controllers.business_access import is_business_manager
+from app.controllers.progress import task_status_progress, task_workload_value
 from app.core.crud import CRUDBase
 from app.models.admin import User
 from app.models.business import Project, Task
@@ -78,7 +79,12 @@ class ProjectController(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
             await project.save()
             return project
 
-        project.progress = round(sum(task.progress for task in tasks) / len(tasks))
+        total_weight = sum(task_workload_value(task.workload) for task in tasks)
+        weighted_progress = sum(
+            task_workload_value(task.workload) * task_status_progress(task.status)
+            for task in tasks
+        )
+        project.progress = round(weighted_progress / total_weight) if total_weight else 0
         risk_values = [task.risk_level for task in tasks]
         if RiskLevel.HIGH in risk_values:
             project.risk_level = RiskLevel.HIGH
@@ -88,6 +94,8 @@ class ProjectController(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
             project.risk_level = RiskLevel.LOW
         if all(task.status == TaskStatus.COMPLETED for task in tasks):
             project.status = ProjectStatus.COMPLETED
+        elif project.status == ProjectStatus.COMPLETED:
+            project.status = ProjectStatus.ACTIVE
         await project.save()
         return project
 

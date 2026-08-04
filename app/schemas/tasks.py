@@ -3,7 +3,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.models.enums import RiskLevel, TaskPriority, TaskSource, TaskStatus
+from app.controllers.progress import task_status_progress
+from app.models.enums import RiskLevel, TaskPriority, TaskSource, TaskStatus, TaskWorkload
 
 
 class BaseTask(BaseModel):
@@ -14,14 +15,14 @@ class BaseTask(BaseModel):
     priority: TaskPriority = Field(TaskPriority.MEDIUM, description="优先级")
     due_date: Optional[date] = Field(None, description="截止日期")
     status: TaskStatus = Field(TaskStatus.NOT_STARTED, description="任务状态")
-    progress: int = Field(0, ge=0, le=100, description="任务进度")
+    progress: int = Field(0, ge=0, le=100, description="系统估算进度")
+    workload: TaskWorkload = Field(TaskWorkload.NORMAL, description="任务工作量")
     risk_level: RiskLevel = Field(RiskLevel.LOW, description="风险等级")
     source: TaskSource = Field(TaskSource.MANUAL, description="任务来源")
 
     @model_validator(mode="after")
-    def validate_completed_progress(self):
-        if self.status == TaskStatus.COMPLETED and self.progress != 100:
-            raise ValueError("已完成任务的进度必须为100")
+    def set_status_progress(self):
+        self.progress = task_status_progress(self.status)
         return self
 
 
@@ -35,13 +36,15 @@ class TaskUpdate(BaseTask):
 class TaskProgressUpdate(BaseModel):
     id: int
     status: TaskStatus = Field(..., description="任务状态")
-    progress: int = Field(..., ge=0, le=100, description="任务进度")
+    progress: int = Field(0, ge=0, le=100, description="系统估算进度")
     risk_level: RiskLevel = Field(RiskLevel.LOW, description="风险等级")
 
     @model_validator(mode="after")
-    def validate_completed_progress(self):
-        if self.status == TaskStatus.COMPLETED and self.progress != 100:
-            raise ValueError("已完成任务的进度必须为100")
+    def set_status_progress(self):
+        allowed_statuses = {TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED, TaskStatus.IN_REVIEW}
+        if self.status not in allowed_statuses:
+            raise ValueError("员工只能将任务更新为进行中、阻塞或审核中")
+        self.progress = task_status_progress(self.status)
         return self
 
 
