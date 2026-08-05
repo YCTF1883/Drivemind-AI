@@ -61,6 +61,16 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
         return args
 
     async def get_response_body(self, request: Request, response: Response) -> Any:
+        content_type = response.headers.get("content-type", "").lower()
+        content_disposition = response.headers.get("content-disposition", "").lower()
+        if "attachment" in content_disposition or self.is_binary_content_type(content_type):
+            return {
+                "code": 0,
+                "msg": "Binary response skipped",
+                "data": None,
+                "content_type": content_type,
+            }
+
         # 检查Content-Length
         content_length = response.headers.get("content-length")
         if content_length and int(content_length) > self.max_body_size:
@@ -100,6 +110,16 @@ class HttpAuditLogMiddleware(BaseHTTPMiddleware):
             except (ValueError, TypeError):
                 pass
         return v
+
+    def is_binary_content_type(self, content_type: str) -> bool:
+        if not content_type:
+            return False
+        text_types = [
+            "application/json",
+            "application/problem+json",
+            "text/",
+        ]
+        return not any(content_type.startswith(item) for item in text_types)
 
     async def _async_iter(self, items: list[bytes]) -> AsyncGenerator[bytes, None]:
         for item in items:
