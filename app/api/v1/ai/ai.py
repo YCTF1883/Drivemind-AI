@@ -1,13 +1,18 @@
+from io import BytesIO
+from urllib.parse import quote
+
 from fastapi import APIRouter, HTTPException, Query
+from starlette.responses import StreamingResponse
 
 from app.ai import ai_workflow
+from app.ai.docx_exporter import build_weekly_report_docx
 from app.ai.exceptions import AIServiceError
 from app.controllers.ai_context import ai_context_controller
 from app.controllers.manager_query import manager_query_controller
 from app.controllers.task import task_controller
 from app.core.dependency import DependAuth
 from app.schemas import Success, SuccessExtra
-from app.schemas.ai import ManagerQuestionRequest, TaskBreakdownRequest
+from app.schemas.ai import ManagerQuestionRequest, ProjectWeeklyReportRequest, TaskBreakdownRequest
 from app.schemas.reports import ReportAnalyzeRequest
 from app.settings.config import settings
 
@@ -33,6 +38,32 @@ async def report_analyze(req: ReportAnalyzeRequest, current_user=DependAuth):
     except AIServiceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return Success(data=result.model_dump(mode="json"))
+
+
+@router.post("/project_weekly_report", summary="AI 生成项目周报")
+async def project_weekly_report(req: ProjectWeeklyReportRequest, current_user=DependAuth):
+    try:
+        result = await ai_workflow.generate_project_weekly_report(req, current_user)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return Success(data=result.model_dump(mode="json"))
+
+
+@router.post("/project_weekly_report/download", summary="下载 AI 项目周报 Word")
+async def download_project_weekly_report(req: ProjectWeeklyReportRequest, current_user=DependAuth):
+    try:
+        result = await ai_workflow.generate_project_weekly_report(req, current_user)
+    except AIServiceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    content = build_weekly_report_docx(result)
+    safe_name = quote(f"{result.project_name}-{result.period}-项目周报.docx")
+    headers = {"Content-Disposition": f"attachment; filename*=UTF-8''{safe_name}"}
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers=headers,
+    )
 
 
 @router.post("/manager_question", summary="管理者 AI 问答")

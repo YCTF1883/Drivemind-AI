@@ -21,7 +21,10 @@ export function reqReject(error) {
 }
 
 export function resResolve(response) {
-  const { data, status, statusText } = response
+  const { data, status, statusText, config } = response
+  if (config.responseType === 'blob') {
+    return Promise.resolve(response)
+  }
   if (data?.code !== 200) {
     const code = data?.code ?? status
     /** 根据code处理对应的操作，并返回处理后的message */

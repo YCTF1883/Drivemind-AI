@@ -1,7 +1,13 @@
-from app.ai.graphs import manager_qa_graph, report_analysis_graph, task_breakdown_graph
+from app.ai.graphs import manager_qa_graph, project_weekly_report_graph, report_analysis_graph, task_breakdown_graph
 from app.models.admin import User
 from app.models.business import Task
-from app.schemas.ai import ManagerAnswerResult, TaskBreakdownRequest, TaskBreakdownResult
+from app.schemas.ai import (
+    ManagerAnswerResult,
+    ProjectWeeklyReportRequest,
+    ProjectWeeklyReportResult,
+    TaskBreakdownRequest,
+    TaskBreakdownResult,
+)
 from app.schemas.reports import ReportAnalysisResult
 
 
@@ -19,6 +25,13 @@ class DriveMindAIWorkflow:
         context_messages: list[dict] | None = None,
     ) -> ManagerAnswerResult:
         return await manager_qa_graph.run(user, question, context_messages=context_messages or [])
+
+    async def generate_project_weekly_report(
+        self,
+        req: ProjectWeeklyReportRequest,
+        user: User,
+    ) -> ProjectWeeklyReportResult:
+        return await project_weekly_report_graph.run(req, user)
 
 
 ai_workflow = DriveMindAIWorkflow()

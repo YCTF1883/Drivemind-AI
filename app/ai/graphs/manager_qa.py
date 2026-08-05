@@ -191,17 +191,17 @@ class ManagerQAGraph:
             return data.get("status") not in ["completed", "archived"] and (data.get("progress") or 0) < 100
 
         filtered = evidences
-        if wants_unfinished and wants_project:
-            filtered = [
-                item
-                for item in evidences
-                if item["type"] == "project" and is_unfinished_project(item.get("data") or {})
-            ]
-        elif wants_unfinished and wants_task:
+        if wants_unfinished and wants_task:
             filtered = [
                 item
                 for item in evidences
                 if item["type"] == "task" and is_unfinished_task(item.get("data") or {})
+            ]
+        elif wants_unfinished and wants_project:
+            filtered = [
+                item
+                for item in evidences
+                if item["type"] == "project" and is_unfinished_project(item.get("data") or {})
             ]
         elif wants_blocked:
             filtered = [

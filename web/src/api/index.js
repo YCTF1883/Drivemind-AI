@@ -63,6 +63,9 @@ export default {
   confirmReport: (data = {}) => request.post('/report/confirm', data),
   deleteReport: (params = {}) => request.delete('/report/delete', { params }),
   analyzeReport: (data = {}) => request.post('/ai/report_analyze', data),
+  generateProjectWeeklyReport: (data = {}) => request.post('/ai/project_weekly_report', data),
+  downloadProjectWeeklyReport: (data = {}) =>
+    request.post('/ai/project_weekly_report/download', data, { responseType: 'blob' }),
   askManagerQuestion: (data = {}) => request.post('/ai/manager_question', data),
   getManagerHistory: (params = {}) => request.get('/ai/manager_history', { params }),
   deleteManagerHistory: (params = {}) => request.delete('/ai/manager_history', { params }),

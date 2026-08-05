@@ -40,11 +40,34 @@ class ManagerAnswerResult(BaseModel):
     evidences: list[dict] = Field(default_factory=list, description="引用证据")
 
 
+class ProjectWeeklyReportRequest(BaseModel):
+    project_id: int = Field(..., description="项目ID")
+    start_date: Optional[date] = Field(None, description="周报开始日期")
+    end_date: Optional[date] = Field(None, description="周报结束日期")
+
+
+class ProjectWeeklyReportResult(BaseModel):
+    title: str = Field(..., description="周报标题")
+    project_name: str = Field(..., description="项目名称")
+    project_code: str = Field("", description="项目编码")
+    period: str = Field(..., description="统计周期")
+    overall_summary: str = Field(..., description="整体总结")
+    progress_summary: str = Field(..., description="进度总结")
+    completed_work: list[str] = Field(default_factory=list, description="已完成工作")
+    ongoing_tasks: list[str] = Field(default_factory=list, description="进行中任务")
+    blocked_or_risky_items: list[str] = Field(default_factory=list, description="风险与阻塞事项")
+    recent_reports_summary: list[str] = Field(default_factory=list, description="近期汇报摘要")
+    next_week_plan: list[str] = Field(default_factory=list, description="下周计划")
+    management_suggestions: list[str] = Field(default_factory=list, description="管理建议")
+    evidences: list[dict] = Field(default_factory=list, description="引用证据")
+
+
 __all__ = [
     "ReportAnalysisResult",
     "TaskBreakdownRequest",
     "TaskBreakdownItem",
     "TaskBreakdownResult",
     "ManagerQuestionRequest",
-    "ManagerAnswerResult",
+    "ProjectWeeklyReportRequest",
+    "ProjectWeeklyReportResult",
 ]

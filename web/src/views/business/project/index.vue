@@ -1,8 +1,10 @@
 <script setup>
 import { h, onMounted, ref, resolveDirective, withDirectives } from 'vue'
 import {
+  NAlert,
   NButton,
   NDatePicker,
+  NDivider,
   NForm,
   NFormItem,
   NInput,
@@ -10,6 +12,7 @@ import {
   NPopconfirm,
   NProgress,
   NSelect,
+  NSpin,
   NTag,
 } from 'naive-ui'
 
@@ -28,6 +31,11 @@ const $table = ref(null)
 const queryItems = ref({})
 const vPermission = resolveDirective('permission')
 const userOptions = ref([])
+const weeklyReportVisible = ref(false)
+const weeklyReportLoading = ref(false)
+const weeklyReportDownloading = ref(false)
+const currentWeeklyProject = ref(null)
+const weeklyReport = ref(null)
 
 const initForm = {
   name: '',
@@ -105,6 +113,57 @@ function renderTag(map, value) {
   return h(NTag, { type: item.type, size: 'small' }, { default: () => item.text })
 }
 
+async function handleWeeklyReport(row) {
+  currentWeeklyProject.value = row
+  weeklyReport.value = null
+  weeklyReportVisible.value = true
+  weeklyReportLoading.value = true
+  try {
+    const res = await api.generateProjectWeeklyReport({ project_id: row.id })
+    weeklyReport.value = res.data
+  } finally {
+    weeklyReportLoading.value = false
+  }
+}
+
+function resolveDownloadFilename(response) {
+  const disposition = response.headers?.['content-disposition'] || ''
+  const filenameMatch = disposition.match(/filename\*=UTF-8''([^;]+)/)
+  if (filenameMatch?.[1]) {
+    return decodeURIComponent(filenameMatch[1])
+  }
+  const projectName = weeklyReport.value?.project_name || currentWeeklyProject.value?.name || '项目'
+  return `${projectName}-项目周报.docx`
+}
+
+async function handleDownloadWeeklyReport() {
+  if (!currentWeeklyProject.value) return
+  weeklyReportDownloading.value = true
+  try {
+    const response = await api.downloadProjectWeeklyReport({
+      project_id: currentWeeklyProject.value.id,
+    })
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = resolveDownloadFilename(response)
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  } finally {
+    weeklyReportDownloading.value = false
+  }
+}
+
+function renderReportList(items) {
+  if (!items?.length) return ['暂无内容']
+  return items
+}
+
 const columns = [
   {
     title: '项目名称',
@@ -170,7 +229,7 @@ const columns = [
   {
     title: '操作',
     key: 'actions',
-    width: 150,
+    width: 240,
     align: 'center',
     fixed: 'right',
     render(row) {
@@ -190,6 +249,22 @@ const columns = [
             }
           ),
           [[vPermission, 'post/api/v1/project/update']]
+        ),
+        withDirectives(
+          h(
+            NButton,
+            {
+              size: 'small',
+              type: 'info',
+              style: 'margin-right: 8px;',
+              onClick: () => handleWeeklyReport(row),
+            },
+            {
+              default: () => 'AI 周报',
+              icon: renderIcon('material-symbols:description-outline', { size: 16 }),
+            }
+          ),
+          [[vPermission, 'post/api/v1/ai/project_weekly_report']]
         ),
         h(
           NPopconfirm,
@@ -234,7 +309,7 @@ const columns = [
       v-model:query-items="queryItems"
       :columns="columns"
       :get-data="api.getProjectList"
-      :scroll-x="980"
+      :scroll-x="1100"
     >
       <template #queryBar>
         <QueryBarItem label="名称" :label-width="40">
@@ -346,5 +421,96 @@ const columns = [
         </NFormItem>
       </NForm>
     </CrudModal>
+
+    <CrudModal
+      v-model:visible="weeklyReportVisible"
+      title="AI 项目周报"
+      width="820px"
+      :loading="weeklyReportDownloading"
+      :show-footer="true"
+    >
+      <NSpin :show="weeklyReportLoading">
+        <template v-if="weeklyReport">
+          <NAlert type="info" :bordered="false" class="mb-16">
+            AI
+            周报基于当前项目、任务状态、风险等级和近期工作汇报生成。下载路径由浏览器下载设置决定，如需每次选择路径，请开启浏览器“下载前询问保存位置”。
+          </NAlert>
+          <div class="weekly-report">
+            <h2>{{ weeklyReport.title }}</h2>
+            <p class="weekly-report-meta">
+              {{ weeklyReport.project_name }}｜{{ weeklyReport.project_code || '-' }}｜{{
+                weeklyReport.period
+              }}
+            </p>
+
+            <NDivider />
+            <h3>一、本周整体进展</h3>
+            <p>{{ weeklyReport.overall_summary }}</p>
+            <h3>二、项目进度</h3>
+            <p>{{ weeklyReport.progress_summary }}</p>
+
+            <template
+              v-for="section in [
+                ['三、已完成工作', weeklyReport.completed_work],
+                ['四、进行中任务', weeklyReport.ongoing_tasks],
+                ['五、风险与阻塞', weeklyReport.blocked_or_risky_items],
+                ['六、近期汇报摘要', weeklyReport.recent_reports_summary],
+                ['七、下周计划', weeklyReport.next_week_plan],
+                ['八、AI 管理建议', weeklyReport.management_suggestions],
+              ]"
+              :key="section[0]"
+            >
+              <h3>{{ section[0] }}</h3>
+              <ul>
+                <li v-for="item in renderReportList(section[1])" :key="item">{{ item }}</li>
+              </ul>
+            </template>
+          </div>
+        </template>
+      </NSpin>
+      <template #footer>
+        <NButton @click="weeklyReportVisible = false">关闭</NButton>
+        <NButton
+          type="primary"
+          :loading="weeklyReportDownloading"
+          :disabled="!weeklyReport"
+          style="margin-left: 12px"
+          @click="handleDownloadWeeklyReport"
+        >
+          下载 Word
+        </NButton>
+      </template>
+    </CrudModal>
   </CommonPage>
 </template>
+
+<style scoped>
+.weekly-report h2 {
+  margin: 0;
+  text-align: center;
+}
+
+.weekly-report h3 {
+  margin: 18px 0 8px;
+  font-weight: 600;
+}
+
+.weekly-report p {
+  line-height: 1.8;
+}
+
+.weekly-report ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.weekly-report li {
+  margin-bottom: 6px;
+  line-height: 1.7;
+}
+
+.weekly-report-meta {
+  color: #666;
+  text-align: center;
+}
+</style>
