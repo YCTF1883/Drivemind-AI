@@ -311,12 +311,29 @@ function getLatestReporterText(row) {
   return row.latest_reporter_name || row.latest_reporter_username || '暂无汇报'
 }
 
+function hasReportItems(value) {
+  if (Array.isArray(value)) {
+    return value.some((item) => String(item || '').trim())
+  }
+  if (typeof value === 'string') {
+    const text = value.trim()
+    if (!text || text === '[]') return false
+    try {
+      const parsed = JSON.parse(text)
+      return hasReportItems(parsed)
+    } catch {
+      return true
+    }
+  }
+  return false
+}
+
 function getLatestReportTags(row) {
   const tags = []
-  if (row.status === 'blocked' || row.latest_report_problems?.length) {
+  if (hasReportItems(row.latest_report_problems)) {
     tags.push({ text: '阻塞', type: 'error' })
   }
-  if (row.latest_report_support_needed?.length) {
+  if (hasReportItems(row.latest_report_support_needed)) {
     tags.push({ text: '需支持', type: 'warning' })
   }
   if (row.risk_level === 'high' || row.latest_report_risk_level === 'high') {
