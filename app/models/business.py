@@ -40,6 +40,15 @@ class Task(BaseModel, TimestampMixin):
         table = "task"
 
 
+class TaskParticipant(BaseModel, TimestampMixin):
+    task_id = fields.IntField(description="任务ID", index=True)
+    user_id = fields.IntField(description="参与人ID", index=True)
+
+    class Meta:
+        table = "task_participant"
+        unique_together = (("task_id", "user_id"),)
+
+
 class WorkReport(BaseModel, TimestampMixin):
     task_id = fields.IntField(description="任务ID", index=True)
     reporter_id = fields.IntField(description="提交人ID", index=True)

@@ -80,6 +80,7 @@ function getReporterText(row) {
 }
 
 function getAssigneeText(row) {
+  if (row.assignee_names?.length) return row.assignee_names.join('、')
   if (row.assignee_name && row.assignee_username && row.assignee_name !== row.assignee_username) {
     return `${row.assignee_name}（${row.assignee_username}）`
   }
@@ -123,11 +124,11 @@ const columns = [
     },
   },
   {
-    title: '提交人 / 负责人',
+    title: '提交人 / 参与人',
     key: 'reporter_id',
     width: 190,
     render(row) {
-      return renderTwoLine(getReporterText(row), `负责人：${getAssigneeText(row)}`)
+      return renderTwoLine(getReporterText(row), `参与人：${getAssigneeText(row)}`)
     },
   },
   {
@@ -262,7 +263,7 @@ const columns = [
           {{ currentReport.task_title || '未命名任务' }}
         </NDescriptionsItem>
         <NDescriptionsItem label="提交人">{{ getReporterText(currentReport) }}</NDescriptionsItem>
-        <NDescriptionsItem label="负责人">{{ getAssigneeText(currentReport) }}</NDescriptionsItem>
+        <NDescriptionsItem label="参与人">{{ getAssigneeText(currentReport) }}</NDescriptionsItem>
         <NDescriptionsItem label="任务状态">
           <NTag :type="taskStatusMap[currentReport.task_status]?.type || 'default'" size="small">
             {{ taskStatusMap[currentReport.task_status]?.text || '-' }}

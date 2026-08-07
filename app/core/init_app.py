@@ -23,6 +23,7 @@ from app.core.exceptions import (
 )
 from app.log import logger
 from app.models.admin import Api, Menu, Role
+from app.models.business import Task, TaskParticipant
 from app.schemas.menus import MenuType
 from app.settings.config import settings
 
@@ -240,6 +241,36 @@ async def patch_business_schema():
     if not columns:
         await connection.execute_script("ALTER TABLE `task` ADD COLUMN `workload` VARCHAR(20) NOT NULL DEFAULT 'normal'")
         logger.info("Business schema patched: added task.workload")
+
+    tables = await connection.execute_query_dict("SHOW TABLES LIKE 'task_participant'")
+    if not tables:
+        await connection.execute_script(
+            """
+            CREATE TABLE IF NOT EXISTS `task_participant` (
+                `id` BIGINT NOT NULL PRIMARY KEY AUTO_INCREMENT,
+                `task_id` BIGINT NOT NULL,
+                `user_id` BIGINT NOT NULL,
+                `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+                `updated_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+                INDEX `idx_task_participant_task_id` (`task_id`),
+                INDEX `idx_task_participant_user_id` (`user_id`),
+                UNIQUE KEY `uk_task_participant_task_user` (`task_id`, `user_id`)
+            ) CHARACTER SET utf8mb4;
+            """
+        )
+        logger.info("Business schema patched: added task_participant")
+
+    await backfill_task_participants()
+
+
+async def backfill_task_participants():
+    tasks = await Task.filter(is_archived=False)
+    for task in tasks:
+        if task.assignee_id is None:
+            continue
+        exists = await TaskParticipant.filter(task_id=task.id, user_id=task.assignee_id).exists()
+        if not exists:
+            await TaskParticipant.create(task_id=task.id, user_id=task.assignee_id)
 
 
 async def _add_missing_menus(role: Role, menus: list[Menu]):

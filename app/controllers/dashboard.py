@@ -4,7 +4,7 @@ from tortoise.expressions import Q
 
 from app.controllers.business_access import is_business_manager
 from app.models.admin import User
-from app.models.business import Project, Task, WorkReport
+from app.models.business import Project, Task, TaskParticipant, WorkReport
 from app.models.enums import ProjectStatus, RiskLevel, TaskStatus
 
 
@@ -69,9 +69,18 @@ class DashboardController:
         assigned_project_ids = list(
             await Task.filter(Q(is_archived=False) & Q(assignee_id=current_user.id)).values_list("project_id", flat=True)
         )
-        visible_project_ids = list(set(managed_project_ids + assigned_project_ids))
+        participant_task_ids = list(await TaskParticipant.filter(user_id=current_user.id).values_list("task_id", flat=True))
+        participant_project_ids = list(
+            await Task.filter(Q(is_archived=False) & Q(id__in=participant_task_ids)).values_list("project_id", flat=True)
+        ) if participant_task_ids else []
+        visible_project_ids = list(set(managed_project_ids + assigned_project_ids + participant_project_ids))
 
-        task_q &= Q(assignee_id=current_user.id) | Q(creator_id=current_user.id) | Q(project_id__in=managed_project_ids)
+        task_q &= (
+            Q(assignee_id=current_user.id)
+            | Q(creator_id=current_user.id)
+            | Q(id__in=participant_task_ids)
+            | Q(project_id__in=managed_project_ids)
+        )
         project_q &= Q(id__in=visible_project_ids) | Q(manager_id=current_user.id) | Q(creator_id=current_user.id)
         return project_q, task_q
 
@@ -88,12 +97,21 @@ class DashboardController:
 
     async def _task_action_item(self, task: Task) -> dict:
         project = await Project.filter(id=task.project_id, is_deleted=False).first()
-        assignee = await User.filter(id=task.assignee_id).first() if task.assignee_id else None
+        participant_ids = list(
+            await TaskParticipant.filter(task_id=task.id).order_by("id").values_list("user_id", flat=True)
+        )
+        if not participant_ids and task.assignee_id:
+            participant_ids = [task.assignee_id]
+        users = await User.filter(id__in=participant_ids).all() if participant_ids else []
+        user_map = {user.id: user for user in users}
+        assignee_names = [
+            (user_map[user_id].alias or user_map[user_id].username) for user_id in participant_ids if user_id in user_map
+        ]
         return {
             "id": task.id,
             "title": task.title,
             "project_name": project.name if project else None,
-            "assignee_name": (assignee.alias or assignee.username) if assignee else None,
+            "assignee_name": "、".join(assignee_names) if assignee_names else None,
             "status": task.status.value,
             "risk_level": task.risk_level.value,
             "progress": task.progress,

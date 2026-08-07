@@ -45,6 +45,7 @@ const initForm = {
   desc: '',
   project_id: null,
   assignee_id: null,
+  assignee_ids: [],
   priority: 'medium',
   due_date: null,
   status: 'not_started',
@@ -67,8 +68,8 @@ const {
 } = useCRUD({
   name: '任务',
   initForm,
-  doCreate: api.createTask,
-  doUpdate: api.updateTask,
+  doCreate: (form) => api.createTask(normalizeTaskPayload(form)),
+  doUpdate: (form) => api.updateTask(normalizeTaskPayload(form)),
   doDelete: api.deleteTask,
   refresh: () => $table.value?.handleSearch(),
 })
@@ -196,6 +197,40 @@ function handleOnlyMineChange() {
   $table.value?.handleSearch()
 }
 
+function normalizeTaskPayload(form) {
+  const assigneeIds = form.assignee_ids?.length
+    ? form.assignee_ids
+    : form.assignee_id
+    ? [form.assignee_id]
+    : []
+  return {
+    ...form,
+    assignee_id: assigneeIds[0] || null,
+    assignee_ids: assigneeIds,
+  }
+}
+
+function handleEditTask(row) {
+  handleEdit({
+    ...row,
+    assignee_ids: row.assignee_ids?.length
+      ? row.assignee_ids
+      : row.assignee_id
+      ? [row.assignee_id]
+      : [],
+  })
+}
+
+function getParticipantText(row) {
+  if (row.assignee_names?.length) return row.assignee_names.join('、')
+  const fallback = row.assignee_id === userStore.userId ? '我' : '未知参与人'
+  return getOptionLabel(userOptions.value, row.assignee_id, fallback)
+}
+
+function isCurrentUserParticipant(row) {
+  return row.assignee_ids?.includes(userStore.userId) || row.assignee_id === userStore.userId
+}
+
 function getInitReportForm(row = {}) {
   return {
     task_id: row.id,
@@ -277,7 +312,7 @@ async function handleConfirmComplete(row) {
 function canReportProgress(row) {
   return (
     canConfirmReport.value &&
-    row.assignee_id === userStore.userId &&
+    isCurrentUserParticipant(row) &&
     !['in_review', 'completed', 'archived'].includes(row.status)
   )
 }
@@ -293,6 +328,35 @@ function getEstimatedProgress(status) {
 function renderTag(map, value) {
   const item = map[value] || { text: value || '-', type: 'default' }
   return h(NTag, { type: item.type, size: 'small' }, { default: () => item.text })
+}
+
+function getTodayText() {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
+function isBeforeToday(value) {
+  if (!value) return false
+  return String(value).slice(0, 10) < getTodayText()
+}
+
+function isTaskOverdue(row) {
+  return isBeforeToday(row.due_date) && !['completed', 'archived'].includes(row.status)
+}
+
+function renderDateWithOverdue(value, overdue) {
+  return h('div', { class: 'deadline-cell' }, [
+    h('div', {}, value || '-'),
+    overdue
+      ? h(
+          NTag,
+          { type: 'error', size: 'small', style: 'margin-top: 4px;' },
+          { default: () => '已逾期' }
+        )
+      : null,
+  ])
 }
 
 function getOptionLabel(options, value, fallback) {
@@ -377,16 +441,24 @@ const columns = [
     key: 'project_id',
     width: 140,
     render(row) {
-      return getOptionLabel(projectOptions.value, row.project_id, '未命名项目')
+      return row.project_name || getOptionLabel(projectOptions.value, row.project_id, '未命名项目')
     },
   },
   {
-    title: '负责人',
-    key: 'assignee_id',
-    width: 120,
+    title: '参与人',
+    key: 'assignee_ids',
+    width: 160,
     render(row) {
-      const fallback = row.assignee_id === userStore.userId ? '我' : '未知负责人'
-      return getOptionLabel(userOptions.value, row.assignee_id, fallback)
+      return getParticipantText(row)
+    },
+  },
+  {
+    title: '截止日期',
+    key: 'due_date',
+    width: 120,
+    align: 'center',
+    render(row) {
+      return renderDateWithOverdue(row.due_date, isTaskOverdue(row))
     },
   },
   {
@@ -444,15 +516,6 @@ const columns = [
     minWidth: 260,
     render(row) {
       return renderLatestReport(row)
-    },
-  },
-  {
-    title: '截止日期',
-    key: 'due_date',
-    width: 110,
-    align: 'center',
-    render(row) {
-      return row.due_date || '-'
     },
   },
   {
@@ -517,7 +580,7 @@ const columns = [
               size: 'small',
               type: 'primary',
               style: 'margin-right: 8px;',
-              onClick: () => handleEdit(row),
+              onClick: () => handleEditTask(row),
             },
             {
               default: () => '编辑',
@@ -577,7 +640,7 @@ const columns = [
       v-model:query-items="queryItems"
       :columns="columns"
       :get-data="getTaskData"
-      :scroll-x="1530"
+      :scroll-x="1650"
     >
       <template #queryBar>
         <QueryBarItem label="标题" :label-width="40">
@@ -597,13 +660,13 @@ const columns = [
             placeholder="请选择项目"
           />
         </QueryBarItem>
-        <QueryBarItem v-if="canListUsers" label="负责人" :label-width="52">
+        <QueryBarItem v-if="canListUsers" label="参与人" :label-width="52">
           <NSelect
             v-model:value="queryItems.assignee_id"
             clearable
             filterable
             :options="userOptions"
-            placeholder="请选择负责人"
+            placeholder="请选择参与人"
           />
         </QueryBarItem>
         <QueryBarItem label="状态" :label-width="40">
@@ -650,13 +713,14 @@ const columns = [
             placeholder="请选择所属项目"
           />
         </NFormItem>
-        <NFormItem label="负责人" path="assignee_id">
+        <NFormItem label="参与人" path="assignee_ids">
           <NSelect
-            v-model:value="modalForm.assignee_id"
+            v-model:value="modalForm.assignee_ids"
             clearable
             filterable
+            multiple
             :options="userOptions"
-            placeholder="请选择执行员工"
+            placeholder="请选择一个或多个执行员工"
           />
         </NFormItem>
         <NFormItem label="状态" path="status">

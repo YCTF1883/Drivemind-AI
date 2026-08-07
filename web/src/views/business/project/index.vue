@@ -113,6 +113,35 @@ function renderTag(map, value) {
   return h(NTag, { type: item.type, size: 'small' }, { default: () => item.text })
 }
 
+function getTodayText() {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
+function isBeforeToday(value) {
+  if (!value) return false
+  return String(value).slice(0, 10) < getTodayText()
+}
+
+function isProjectOverdue(row) {
+  return isBeforeToday(row.end_date) && !['completed', 'archived'].includes(row.status)
+}
+
+function renderDateWithOverdue(value, overdue) {
+  return h('div', { class: 'deadline-cell' }, [
+    h('div', {}, value || '-'),
+    overdue
+      ? h(
+          NTag,
+          { type: 'error', size: 'small', style: 'margin-top: 4px;' },
+          { default: () => '已逾期' }
+        )
+      : null,
+  ])
+}
+
 async function handleWeeklyReport(row) {
   currentWeeklyProject.value = row
   weeklyReport.value = null
@@ -223,7 +252,7 @@ const columns = [
     width: 110,
     align: 'center',
     render(row) {
-      return row.end_date || '-'
+      return renderDateWithOverdue(row.end_date, isProjectOverdue(row))
     },
   },
   {

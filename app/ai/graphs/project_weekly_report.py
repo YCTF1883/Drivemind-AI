@@ -8,7 +8,7 @@ from tortoise.expressions import Q
 from app.ai.exceptions import AIServiceError
 from app.controllers.project import project_controller
 from app.models.admin import User
-from app.models.business import Task, WorkReport
+from app.models.business import Task, TaskParticipant, WorkReport
 from app.models.enums import RiskLevel, TaskStatus
 from app.schemas.ai import ProjectWeeklyReportRequest, ProjectWeeklyReportResult
 from app.settings.config import settings
@@ -54,6 +54,9 @@ class ProjectWeeklyReportGraph:
         reports = await WorkReport.filter(report_q).order_by("-created_at") if task_ids else []
 
         user_ids = {project.manager_id, project.creator_id}
+        participant_map = await self.task_participant_map(task_ids)
+        participant_user_ids = {user_id for user_ids in participant_map.values() for user_id in user_ids}
+        user_ids.update(participant_user_ids)
         user_ids.update(task.assignee_id for task in tasks if task.assignee_id)
         user_ids.update(report.reporter_id for report in reports)
         user_map = {item.id: item for item in await User.filter(id__in=list(user_ids)).all()} if user_ids else {}
@@ -66,8 +69,11 @@ class ProjectWeeklyReportGraph:
         task_map = {task.id: task for task in tasks}
         for task in tasks:
             item = await task.to_dict()
-            assignee = user_map.get(task.assignee_id)
-            item["assignee_name"] = (assignee.alias or assignee.username) if assignee else None
+            participant_ids = participant_map.get(task.id) or ([task.assignee_id] if task.assignee_id else [])
+            participant_users = [user_map.get(user_id) for user_id in participant_ids]
+            item["assignee_name"] = "、".join((user.alias or user.username) for user in participant_users if user) or None
+            item["assignee_names"] = [(user.alias or user.username) for user in participant_users if user]
+            item["assignee_ids"] = participant_ids
             task_data.append(item)
 
         report_data = []
@@ -241,9 +247,16 @@ class ProjectWeeklyReportGraph:
                 return None
         return None
 
+    async def task_participant_map(self, task_ids: list[int]) -> dict[int, list[int]]:
+        participants = await TaskParticipant.filter(task_id__in=task_ids).order_by("id") if task_ids else []
+        result: dict[int, list[int]] = {}
+        for participant in participants:
+            result.setdefault(participant.task_id, []).append(participant.user_id)
+        return result
+
     def task_line(self, task: dict) -> str:
         assignee = task.get("assignee_name") or "未分配"
-        return f"{task.get('title') or '未命名任务'}（负责人：{assignee}，状态：{task.get('status')}，进度：{task.get('progress') or 0}%）"
+        return f"{task.get('title') or '未命名任务'}（参与人：{assignee}，状态：{task.get('status')}，进度：{task.get('progress') or 0}%）"
 
     def risk_line(self, task: dict) -> str:
         text = self.task_line(task)

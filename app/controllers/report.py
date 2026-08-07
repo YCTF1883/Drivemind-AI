@@ -6,7 +6,7 @@ from app.controllers.business_access import is_business_manager
 from app.controllers.progress import task_status_progress
 from app.core.crud import CRUDBase
 from app.models.admin import User
-from app.models.business import Project, Task, WorkReport
+from app.models.business import Project, Task, TaskParticipant, WorkReport
 from app.models.enums import TaskStatus
 from app.schemas.reports import ReportCreate
 
@@ -25,6 +25,9 @@ class ReportController(CRUDBase[WorkReport, ReportCreate, ReportCreate]):
         project_map = {project.id: project for project in projects}
 
         user_ids = {report.reporter_id for report in reports}
+        participant_map = await self._task_participant_map(list(task_ids))
+        participant_user_ids = {user_id for user_ids in participant_map.values() for user_id in user_ids}
+        user_ids.update(participant_user_ids)
         user_ids.update(task.assignee_id for task in tasks if task.assignee_id)
         users = await User.filter(id__in=list(user_ids)).all() if user_ids else []
         user_map = {user.id: user for user in users}
@@ -40,13 +43,18 @@ class ReportController(CRUDBase[WorkReport, ReportCreate, ReportCreate]):
             reporter_name = (reporter.alias or reporter.username) if reporter else None
             assignee_name = (assignee.alias or assignee.username) if assignee else None
 
+            participant_ids = participant_map.get(task.id) if task else []
+            participant_users = [user_map.get(user_id) for user_id in participant_ids]
+
             item.update(
                 {
                     "task_title": task.title if task else None,
                     "task_status": task.status.value if task else None,
                     "task_progress": task.progress if task else None,
                     "task_assignee_id": task.assignee_id if task else None,
+                    "task_assignee_ids": participant_ids,
                     "assignee_name": assignee_name,
+                    "assignee_names": [(user.alias or user.username) for user in participant_users if user],
                     "assignee_username": assignee.username if assignee else None,
                     "project_id": project.id if project else None,
                     "project_name": project.name if project else None,
@@ -67,7 +75,8 @@ class ReportController(CRUDBase[WorkReport, ReportCreate, ReportCreate]):
             visible_tasks = await Task.filter(
                 Q(is_archived=False) & (Q(assignee_id=current_user.id) | Q(creator_id=current_user.id))
             ).values_list("id", flat=True)
-            q = Q(reporter_id=current_user.id) | Q(task_id__in=list(visible_tasks))
+            participant_task_ids = await TaskParticipant.filter(user_id=current_user.id).values_list("task_id", flat=True)
+            q = Q(reporter_id=current_user.id) | Q(task_id__in=list(set(visible_tasks) | set(participant_task_ids)))
             q &= search
         return await self.list(page=page, page_size=page_size, search=q, order=order)
 
@@ -86,8 +95,8 @@ class ReportController(CRUDBase[WorkReport, ReportCreate, ReportCreate]):
         from app.models.business import Task
 
         task = await task_controller.get_visible(obj_in.task_id, reporter)
-        if not reporter.is_superuser and task.assignee_id != reporter.id:
-            raise HTTPException(status_code=403, detail="Only task assignee can submit report")
+        if not reporter.is_superuser and not await task_controller.is_task_participant(task.id, reporter.id):
+            raise HTTPException(status_code=403, detail="Only task participant can submit report")
 
         next_status = obj_in.task_status
         if next_status is None:
@@ -116,6 +125,12 @@ class ReportController(CRUDBase[WorkReport, ReportCreate, ReportCreate]):
         if not await is_business_manager(current_user) and report.reporter_id != current_user.id:
             raise HTTPException(status_code=403, detail="No permission to delete this report")
         await self.remove(id=id)
+    async def _task_participant_map(self, task_ids: list[int]) -> dict[int, list[int]]:
+        participants = await TaskParticipant.filter(task_id__in=task_ids).order_by("id") if task_ids else []
+        result: dict[int, list[int]] = {}
+        for participant in participants:
+            result.setdefault(participant.task_id, []).append(participant.user_id)
+        return result
 
 
 report_controller = ReportController()

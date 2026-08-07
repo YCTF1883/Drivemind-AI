@@ -5,7 +5,7 @@ from app.controllers.business_access import is_business_manager
 from app.controllers.progress import task_status_progress, task_workload_value
 from app.core.crud import CRUDBase
 from app.models.admin import User
-from app.models.business import Project, Task
+from app.models.business import Project, Task, TaskParticipant
 from app.models.enums import ProjectStatus, RiskLevel, TaskStatus
 from app.schemas.projects import ProjectCreate, ProjectUpdate
 
@@ -18,7 +18,14 @@ class ProjectController(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
         q = Q(is_deleted=False)
         if await is_business_manager(current_user):
             return q
-        task_project_ids = await Task.filter(assignee_id=current_user.id, is_archived=False).values_list("project_id", flat=True)
+        assigned_project_ids = await Task.filter(assignee_id=current_user.id, is_archived=False).values_list("project_id", flat=True)
+        participant_task_ids = await TaskParticipant.filter(user_id=current_user.id).values_list("task_id", flat=True)
+        participant_project_ids = (
+            await Task.filter(id__in=list(participant_task_ids), is_archived=False).values_list("project_id", flat=True)
+            if participant_task_ids
+            else []
+        )
+        task_project_ids = list(set(assigned_project_ids) | set(participant_project_ids))
         return q & (
             Q(manager_id=current_user.id) | Q(creator_id=current_user.id) | Q(id__in=list(task_project_ids))
         )
@@ -34,6 +41,10 @@ class ProjectController(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
             return project
         task = await Task.filter(project_id=id, assignee_id=current_user.id).first()
         if task:
+            return project
+        participant_task_ids = await TaskParticipant.filter(user_id=current_user.id).values_list("task_id", flat=True)
+        participant_task = await Task.filter(project_id=id, id__in=list(participant_task_ids), is_archived=False).first()
+        if participant_task:
             return project
         raise HTTPException(status_code=403, detail="No permission for this project")
 

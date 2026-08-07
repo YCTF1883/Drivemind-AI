@@ -26,7 +26,10 @@ async def list_task(
     if project_id is not None:
         q &= Q(project_id=project_id)
     if assignee_id is not None:
-        q &= Q(assignee_id=assignee_id)
+        from app.models.business import TaskParticipant
+
+        participant_task_ids = await TaskParticipant.filter(user_id=assignee_id).values_list("task_id", flat=True)
+        q &= Q(assignee_id=assignee_id) | Q(id__in=list(participant_task_ids))
     if status:
         q &= Q(status=status)
     if risk_level:

@@ -5,7 +5,7 @@ from tortoise.expressions import Q
 
 from app.controllers.business_access import is_business_manager
 from app.models.admin import User
-from app.models.business import Project, Task, WorkReport
+from app.models.business import Project, Task, TaskParticipant, WorkReport
 from app.models.enums import RiskLevel, TaskStatus
 from app.schemas.ai import ManagerAnswerResult
 from app.settings.config import settings
@@ -259,7 +259,13 @@ class ManagerQAGraph:
                 project_q & (Q(manager_id=user.id) | Q(creator_id=user.id))
             ).values_list("id", flat=True)
             project_q &= Q(manager_id=user.id) | Q(creator_id=user.id)
-            task_q &= Q(assignee_id=user.id) | Q(creator_id=user.id) | Q(project_id__in=list(managed_project_ids))
+            participant_task_ids = await TaskParticipant.filter(user_id=user.id).values_list("task_id", flat=True)
+            task_q &= (
+                Q(assignee_id=user.id)
+                | Q(creator_id=user.id)
+                | Q(id__in=list(participant_task_ids))
+                | Q(project_id__in=list(managed_project_ids))
+            )
 
         projects = await Project.filter(project_q).order_by("risk_level", "-updated_at").limit(8)
         tasks = await Task.filter(task_q).order_by("risk_level", "due_date", "-updated_at").limit(12)
@@ -278,6 +284,9 @@ class ManagerQAGraph:
         )
 
         user_ids = {project.manager_id for project in projects if project.manager_id}
+        participant_map = await self.task_participant_map(task_ids)
+        participant_user_ids = {user_id for user_ids in participant_map.values() for user_id in user_ids}
+        user_ids.update(participant_user_ids)
         user_ids.update(task.assignee_id for task in tasks if task.assignee_id)
         user_ids.update(report.reporter_id for report in reports)
         user_map = {item.id: item for item in await User.filter(id__in=list(user_ids)).all()} if user_ids else {}
@@ -293,10 +302,13 @@ class ManagerQAGraph:
         for task in tasks:
             item = await task.to_dict()
             project = task_project_map.get(task.project_id)
-            assignee = user_map.get(task.assignee_id)
+            participant_ids = participant_map.get(task.id) or ([task.assignee_id] if task.assignee_id else [])
+            participant_users = [user_map.get(user_id) for user_id in participant_ids]
             item["project_name"] = project.name if project else None
             item["project_code"] = project.code if project else None
-            item["assignee_name"] = (assignee.alias or assignee.username) if assignee else None
+            item["assignee_name"] = "、".join((user.alias or user.username) for user in participant_users if user) or None
+            item["assignee_names"] = [(user.alias or user.username) for user in participant_users if user]
+            item["assignee_ids"] = participant_ids
             evidences.append({"type": "task", "data": item})
 
         for report in reports:
@@ -309,6 +321,13 @@ class ManagerQAGraph:
             item["reporter_name"] = (reporter.alias or reporter.username) if reporter else None
             evidences.append({"type": "report", "data": item})
         return evidences
+
+    async def task_participant_map(self, task_ids: list[int]) -> dict[int, list[int]]:
+        participants = await TaskParticipant.filter(task_id__in=task_ids).order_by("id") if task_ids else []
+        result: dict[int, list[int]] = {}
+        for participant in participants:
+            result.setdefault(participant.task_id, []).append(participant.user_id)
+        return result
 
     def fallback_answer(self, question: str, evidences: list[dict]) -> ManagerAnswerResult:
         projects = [item for item in evidences if item["type"] == "project"]
