@@ -223,12 +223,16 @@ function handleEditTask(row) {
 
 function getParticipantText(row) {
   if (row.assignee_names?.length) return row.assignee_names.join('、')
-  const fallback = row.assignee_id === userStore.userId ? '我' : '未知参与人'
+  const fallback = String(row.assignee_id) === String(userStore.userId) ? '我' : '未知参与人'
   return getOptionLabel(userOptions.value, row.assignee_id, fallback)
 }
 
 function isCurrentUserParticipant(row) {
-  return row.assignee_ids?.includes(userStore.userId) || row.assignee_id === userStore.userId
+  const currentUserId = String(userStore.userId)
+  return (
+    row.assignee_ids?.some((id) => String(id) === currentUserId) ||
+    String(row.assignee_id) === currentUserId
+  )
 }
 
 function getInitReportForm(row = {}) {
@@ -319,6 +323,16 @@ function canReportProgress(row) {
 
 function canConfirmComplete(row) {
   return canUpdateTask.value && row.status === 'in_review'
+}
+
+function getParticipantStatusAction(row) {
+  if (!isCurrentUserParticipant(row) || canConfirmComplete(row)) return null
+  const actionMap = {
+    in_review: { text: '待经理确认', type: 'warning' },
+    completed: { text: '已完成', type: 'success' },
+    archived: { text: '已归档', type: 'default' },
+  }
+  return actionMap[row.status] || null
 }
 
 function getEstimatedProgress(status) {
@@ -540,6 +554,25 @@ const columns = [
             {
               default: () => '汇报进展',
               icon: renderIcon('material-symbols:chat-outline', { size: 16 }),
+            }
+          )
+        )
+      }
+
+      const participantStatusAction = getParticipantStatusAction(row)
+      if (participantStatusAction) {
+        actions.push(
+          h(
+            NButton,
+            {
+              size: 'small',
+              type: participantStatusAction.type,
+              disabled: true,
+              style: 'margin-right: 8px;',
+            },
+            {
+              default: () => participantStatusAction.text,
+              icon: renderIcon('material-symbols:info-outline', { size: 16 }),
             }
           )
         )
